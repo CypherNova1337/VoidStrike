@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voidstrike"
+version = "1.0.0"
+description = "AI-assisted Remote Code Execution testing framework for authorized security assessments"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "VoidSec-Hub" }]
+keywords = ["security", "pentest", "rce", "appsec", "red-team", "oast"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Intended Audience :: Information Technology",
+]
+dependencies = []
+
+[project.optional-dependencies]
+fast = ["httpx>=0.24"]
+yaml = ["PyYAML>=6.0"]
+all = ["httpx>=0.24", "PyYAML>=6.0"]
+
+[project.scripts]
+voidstrike = "voidstrike.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/CypherNova1337/RCE-Robot"
+
+[tool.setuptools.packages.find]
+include = ["voidstrike*"]

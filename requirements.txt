@@ -1,0 +1,8 @@
+# VoidStrike runs on the Python standard library alone. The packages below are
+# optional and simply make it faster / more ergonomic when present.
+#
+#   httpx  -> async HTTP backend (falls back to urllib if missing)
+#   PyYAML -> nicer YAML parsing for scope/target files (a tiny built-in
+#             fallback parser is used otherwise)
+httpx>=0.24
+PyYAML>=6.0

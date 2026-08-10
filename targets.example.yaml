@@ -1,0 +1,40 @@
+# VoidStrike targets file (optional — you can also just pass --url).
+# Each target is a request template. Any query/body/json value you want treated
+# as an injection point is listed under params / body_params / json_body.
+
+targets:
+  # 1) Simple GET with a query parameter injection point.
+  - url: "https://app.example.com/ping"
+    method: "GET"
+    params:
+      host: "127.0.0.1"
+
+  # 2) POST body parameters.
+  - url: "https://app.example.com/render"
+    method: "POST"
+    body_params:
+      template: "hello"
+      name: "world"
+
+  # 3) JSON body — values equal to "*" are injection points.
+  - url: "https://app.example.com/api/exec"
+    method: "POST"
+    json_body:
+      cmd: "*"
+      mode: "safe"
+
+  # 4) Header injection (e.g. for JNDI/Log4Shell in logged headers).
+  - url: "https://app.example.com/"
+    method: "GET"
+    header_injection:
+      - "User-Agent"
+      - "X-Forwarded-For"
+
+  # 5) File-upload endpoint — declare the field and where files land.
+  - url: "https://app.example.com/upload"
+    method: "POST"
+    upload_field: "file"
+    upload_extra:
+      csrf: "token-here"
+    upload_url_bases:
+      - "https://app.example.com/uploads/"

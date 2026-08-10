@@ -1,0 +1,29 @@
+# VoidStrike engagement / scope definition
+# ----------------------------------------
+# VoidStrike REFUSES to run without a defined authorized scope. Copy this file,
+# fill in ONLY the systems you are contractually/legally permitted to test, and
+# pass it with `--scope`. Anything not matched by `in_scope` is rejected.
+
+name: "Example Corp — Q3 external web assessment"
+authorized_by: "Jane Doe, CISO, Example Corp"
+reference: "ROE-2026-0142"        # rules-of-engagement / contract / ticket id
+
+# Hostname globs and/or CIDR ranges you are authorized to test.
+in_scope:
+  - "app.example.com"
+  - "*.staging.example.com"
+  - "203.0.113.0/24"
+
+# Explicit carve-outs that must never be touched, even if inside in_scope.
+out_of_scope:
+  - "payments.example.com"
+  - "*.partner.example.com"
+
+# Optional hard expiry as a unix epoch timestamp (0 = no expiry).
+# After this time VoidStrike will refuse to continue.
+expires_at: 0
+
+# If false, targets resolving to private/loopback/reserved ranges are blocked.
+allow_private_ranges: true
+
+notes: "Testing window 09:00-17:00 local. Avoid the /billing path entirely."
