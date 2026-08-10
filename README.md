@@ -6,10 +6,18 @@ VoidStrike hunts for, verifies, and documents remote-code-execution
 vulnerabilities across the modern web attack surface: OS command injection,
 server-side template injection, interpreted-language code injection, expression
 language / JNDI (Log4Shell-class), insecure deserialization, and unrestricted
-file upload. It backs every finding with a concrete oracle (reflected output,
-timing, or an out-of-band callback), an optional LLM sharpens verdicts and
-payloads, and a post-exploitation shell turns a confirmed injection into an
-interactive command channel.
+file upload.
+
+At its core is **the Brain** — an always-on offensive intelligence with a
+built-in knowledge base of every RCE manoeuvre (dozens of techniques, hundreds
+of payloads, and an evasion-transform library). The Brain plans which manoeuvres
+to run, judges whether each one executed, and adapts around filters — on every
+request. It is not an optional add-on: with no configuration it reasons as a
+deterministic expert system, and when you point it at an LLM endpoint it layers
+live reasoning on top of that same expertise. Every finding is backed by a
+concrete oracle (reflected output, timing, or an out-of-band callback), and a
+post-exploitation shell turns a confirmed injection into an interactive command
+channel.
 
 ```
  __     __     _     _ ____  _        _ _
@@ -34,10 +42,11 @@ touch during an engagement. It's off by default so the tool stays quick to use.
 
 | Capability | Details |
 |---|---|
+| **The Brain** | always-on offensive intelligence: 34 manoeuvres / 140+ payloads / 7 evasion transforms built in; plans, judges and adapts on every request |
 | **6 RCE detection modules** | command injection, SSTI, code injection, expression-language/JNDI, deserialization, file upload |
 | **Three oracles** | output-marker, time-based (blind), and out-of-band (OAST) confirmation |
-| **AI assistance** | provider-agnostic LLM layer sharpens verdicts, expands payloads, and maps filter/WAF gaps — degrades to deterministic heuristics when offline |
-| **Scope enforcement** | fail-closed guard with globs + CIDRs, out-of-scope carve-outs, hard blocklist, and an audit log |
+| **Optional LLM augmentation** | point the Brain at any OpenAI-compatible endpoint to add live reasoning on top of its built-in expertise — never a hard dependency |
+| **Optional scope enforcement** | opt-in guard with globs + CIDRs, out-of-scope carve-outs, and an audit log |
 | **Interactive shell** | derives a command channel from a confirmed injection — run commands, no re-fuzzing |
 | **OAST** | local HTTP callback listener or a hosted collaborator domain for blind RCE |
 | **Reporting** | JSON + Markdown reports with PoC payloads, evidence, and remediation |
@@ -48,36 +57,35 @@ touch during an engagement. It's off by default so the tool stays quick to use.
 ```bash
 git clone https://github.com/CypherNova1337/VoidStrike.git
 cd VoidStrike
-
-# Runs as-is on Python 3.10+. Optional extras make it faster:
-pip install -r requirements.txt          # httpx + PyYAML
-# or install as a package (adds the `voidstrike` command):
-pip install -e ".[all]"
+pip install -e .        # adds the `voidstrike` command (Python 3.10+)
 ```
 
-No dependencies? It still works — `python -m voidstrike ...`.
+That's it — no required dependencies (`httpx`/`PyYAML` are used automatically if
+present). If you'd rather not install, `python -m voidstrike ...` works too.
 
 ## Quick start
 
 Just point it at a URL — query parameters become injection points:
 
 ```bash
-python -m voidstrike "https://app.example.com/ping?host=127.0.0.1"
+voidstrike "https://app.example.com/ping?host=127.0.0.1"
 ```
 
 That's it. The report lands in `voidstrike-results/report.md` (and `report.json`).
 
-List detection modules any time:
+See what the Brain knows, or list modules:
 
 ```bash
-python -m voidstrike modules
+voidstrike brain          # the full built-in manoeuvre knowledge base
+voidstrike brain --class ssti
+voidstrike modules
 ```
 
 ## Usage
 
 ```
-python -m voidstrike <url> [url...] [options]        # implicit scan
-python -m voidstrike scan <url> [url...] [options]   # explicit
+voidstrike <url> [url...] [options]        # implicit scan
+voidstrike scan <url> [url...] [options]   # explicit
 
   -t, --targets FILE     YAML/JSON targets file (see targets.example.yaml)
   -s, --scope FILE       OPTIONAL scope file to restrict which hosts may be hit
@@ -99,7 +107,7 @@ python -m voidstrike scan <url> [url...] [options]   # explicit
 After a scan confirms an output-based command/code injection, open a channel:
 
 ```bash
-python -m voidstrike shell --report voidstrike-results/report.json
+voidstrike shell --report voidstrike-results/report.json
 ```
 
 ```
@@ -113,10 +121,26 @@ The channel is derived from the confirmed payload itself (the proven
 `echo <marker>` slot is reused to wrap real command output), so it is reliable
 and low-noise.
 
-## AI configuration (provider-agnostic)
+## The Brain
 
-VoidStrike does not hard-code any AI vendor. Point it at any OpenAI-compatible
-or messages-style HTTP endpoint via environment variables:
+The Brain is VoidStrike's core intelligence, and it is always on. Its long-term
+memory is a built-in corpus of RCE manoeuvres (`voidstrike/ai/knowledge.py`) —
+per-OS command-injection separators and evasions, per-engine SSTI, per-language
+code injection and deserialization, OGNL/SpEL/JNDI, upload tricks, and a library
+of evasion transforms. On every request the Brain:
+
+- **plans** which manoeuvres to try, ranked to the observed context/stack,
+- **judges** whether a payload executed (output / timing / OOB oracle),
+- **adapts** around filters using its evasion transforms, and
+- **recommends** the highest-value next move.
+
+Inspect everything it knows with `voidstrike brain`.
+
+### Optional LLM augmentation (provider-agnostic)
+
+The Brain is fully operational with no LLM. To add live model reasoning on top
+of its built-in expertise, point it at any OpenAI-compatible or messages-style
+endpoint — VoidStrike hard-codes no vendor:
 
 ```bash
 export VOIDSTRIKE_LLM_BASE_URL="https://your-llm-gateway.example/v1"
@@ -124,16 +148,10 @@ export VOIDSTRIKE_LLM_MODEL="your-model-id"
 export VOIDSTRIKE_LLM_API_KEY="..."     # read from env, never written to disk
 ```
 
-When configured, the AI layer:
-
-- classifies ambiguous responses (executed / reflected / blocked / inconclusive),
-- proposes additional context-aware payloads,
-- suggests filter/WAF-evasion variants to map a client's coverage gaps,
-- recommends the highest-value next step.
-
-If no LLM is configured, VoidStrike runs fully on deterministic heuristics — the
-AI never becomes a hard dependency, and it can never fabricate a "success" that
-the marker/timing/OOB oracles don't independently support.
+When augmented, the Brain additionally proposes context-specific payloads and
+sharper verdicts. It can never fabricate a "success", though: an `executed`
+verdict always requires a real oracle (marker echoed, timing, or OOB callback),
+not model confidence.
 
 ## Out-of-band (blind RCE)
 
@@ -142,22 +160,25 @@ callbacks to infrastructure you control:
 
 ```bash
 # Hosted collaborator (Interactsh-style) domain:
-python -m voidstrike "https://app.example.com/" --oob-domain your-oast-domain.example
+voidstrike "https://app.example.com/" --oob-domain your-oast-domain.example
 
 # Or a local listener when you control the network path:
-python -m voidstrike "https://app.example.com/" --oob-listener 8000
+voidstrike "https://app.example.com/" --oob-listener 8000
 ```
 
 ## Architecture
 
 ```
 voidstrike/
-├── authorization.py   scope guard + consent + audit (fail-closed)
+├── authorization.py   optional scope guard + audit log
 ├── http_client.py     async client, rate limiting, multipart, scope hook
 ├── config.py          runtime configuration
 ├── targets.py         URL / file → request templates
 ├── oob/               out-of-band interaction (OAST)
-├── ai/                provider-agnostic LLM engine + analyzer + prompts
+├── ai/                the Brain + knowledge base + provider-agnostic LLM engine
+│   ├── knowledge.py   built-in corpus of RCE manoeuvres + evasion transforms
+│   ├── brain.py       always-on intelligence: plan / assess / evade / recommend
+│   └── engine.py      optional LLM augmentation
 ├── engine/            models, session/probe primitive, detector orchestrator
 ├── modules/           detection modules (auto-discovered)
 │   ├── command_injection.py
@@ -194,7 +215,7 @@ class MyModule(Module):
 
 ```bash
 python -m pytest -q            # unit tests
-python -m voidstrike modules   # sanity check discovery
+voidstrike modules   # sanity check discovery
 ```
 
 The test suite spins up a deliberately vulnerable local server and confirms the

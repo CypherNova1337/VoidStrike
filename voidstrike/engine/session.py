@@ -1,9 +1,10 @@
 """Shared session state and the low-level probe primitive.
 
 A :class:`Session` bundles the configured HTTP client, scope guard, OOB
-manager, AI analyzer and accumulated findings, and exposes :meth:`probe` — the
-single primitive every detection module uses to send one payload at one
-injection point and get back a normalized result (response + verdict + timing).
+manager, the offensive :class:`~voidstrike.ai.brain.Brain` and accumulated
+findings, and exposes :meth:`probe` — the single primitive every detection
+module uses to send one payload at one injection point and get back a normalized
+result (response + verdict + timing).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-from ..ai.analyzer import Analyzer, Verdict
+from ..ai.brain import Brain, Verdict
 from ..config import Config
 from ..http_client import HttpClient, Response
 from ..oob import OOBManager
@@ -30,11 +31,11 @@ class ProbeResult:
 
 
 class Session:
-    def __init__(self, config: Config, http: HttpClient, analyzer: Analyzer,
+    def __init__(self, config: Config, http: HttpClient, brain: Brain,
                  oob: OOBManager, logger=None):
         self.config = config
         self.http = http
-        self.analyzer = analyzer
+        self.brain = brain
         self.oob = oob
         self.log = logger or get_logger(use_color=config.use_color)
         self.findings: list[Finding] = []
@@ -73,7 +74,7 @@ class Session:
         start = time.monotonic()
         resp = await self._send(point, payload)
         elapsed = time.monotonic() - start
-        verdict = await self.analyzer.analyze_response(
+        verdict = await self.brain.assess(
             vuln_class=vuln_class, marker=marker, payload=payload,
             status=resp.status, snippet=resp.text[:4000], elapsed=elapsed,
             baseline=baseline,

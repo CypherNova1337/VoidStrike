@@ -64,9 +64,10 @@ class Module:
             if result.verdict.verdict == "blocked":
                 blocked_example = result
 
-        # AI-assisted filter adaptation (best effort, non-destructive).
-        if blocked_example is not None and self.s.analyzer.engine.available:
-            variants = await self.s.analyzer.adapt_to_filter(
+        # The Brain adapts around a filter using its evasion-transform library
+        # (plus LLM variants when available) to map the target's WAF coverage.
+        if blocked_example is not None:
+            variants = await self.s.brain.evade(
                 vuln_class=self.vuln_class, marker=marker,
                 payload=blocked_example.payload,
                 evidence=blocked_example.response.text[:400],
@@ -83,11 +84,13 @@ class Module:
                     return result
         return None
 
-    async def ai_expand(self, point: InjectionPoint, marker: str,
-                        context: str) -> list[str]:
-        """Ask the AI layer for extra candidate payloads (empty if no AI)."""
-        return await self.s.analyzer.suggest_payloads(
-            vuln_class=self.vuln_class, marker=marker, context=context,
+    async def plan(self, *, marker: str = "", host: str = "", sleep: int = 6,
+                   context: str = "", oracle: str | None = None,
+                   limit: int = 40) -> list[str]:
+        """Ask the Brain to plan payloads for this module's class + context."""
+        return await self.s.brain.plan(
+            vuln_class=self.vuln_class, marker=marker, host=host, sleep=sleep,
+            context=context, oracle=oracle, limit=limit,
         )
 
     def _record(self, result: ProbeResult, *, oracle: str,

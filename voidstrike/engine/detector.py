@@ -7,7 +7,8 @@ findings into a :class:`~voidstrike.reporting.report.Report`.
 
 from __future__ import annotations
 
-from ..ai import AIEngine, Analyzer
+from ..ai import AIEngine, Brain
+from ..ai import knowledge as kb
 from ..authorization import Engagement, ScopeGuard
 from ..config import Config
 from ..http_client import HttpClient
@@ -31,10 +32,13 @@ class Detector:
         from ..modules import all_modules, get_module
 
         ai_engine = AIEngine(self.config.ai)
-        analyzer = Analyzer(ai_engine)
+        brain = Brain(ai_engine)
         oob = OOBManager(self.config.oob)
         engagement = self.guard.engagement if self.guard else Engagement(name="ad-hoc")
-        report = Report(engagement, ai_status=ai_engine.status)
+        corpus = kb.corpus_summary()
+        techniques_total = sum(t for _, t, _ in corpus)
+        report = Report(engagement,
+                        ai_status=f"brain:{brain.mode} ({ai_engine.status})")
 
         if self.module_names:
             module_classes = [m for m in (get_module(n) for n in self.module_names) if m]
@@ -48,12 +52,15 @@ class Detector:
             f"Loaded {len(module_classes)} module(s): "
             + ", ".join(m.name for m in module_classes)
         )
-        self.log.info(f"AI assistance: {ai_engine.status}")
+        self.log.info(
+            f"Brain online [{brain.mode}] — {techniques_total} manoeuvres across "
+            f"{len(corpus)} RCE classes; LLM {ai_engine.status}"
+        )
 
         await oob.start()
         try:
             async with HttpClient(self.config.http, self.guard) as http:
-                session = Session(self.config, http, analyzer, oob, self.log)
+                session = Session(self.config, http, brain, oob, self.log)
                 for target in targets:
                     # When a scope guard is configured it is enforced per-request
                     # too; here we just fail fast on out-of-scope targets.
@@ -72,11 +79,14 @@ class Detector:
                 report.findings = session.findings
                 report.requests_sent = http.stats.get("sent", 0)
 
-                if analyzer.engine.available and session.findings:
-                    summary = "; ".join(
-                        f"{f.vuln_class} at {f.injection_point}" for f in session.findings
-                    )
-                    report.ai_recommendation = await analyzer.recommend_next(summary)
+                # The Brain always recommends a next move (expert rules, or LLM
+                # reasoning when augmented).
+                summary = "; ".join(
+                    f"{f.vuln_class} at {f.injection_point}" for f in session.findings
+                ) or "no findings yet"
+                report.ai_recommendation = await brain.recommend_next(
+                    summary, len(session.findings)
+                )
         finally:
             await oob.stop()
 

