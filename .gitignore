@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.env
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# VoidStrike runtime output (may contain sensitive engagement data)
+voidstrike-results/
+*-results/
+*.report.json
+audit.json
+
+# Never commit real engagement scope / target files or credentials
+scope.yaml
+scope.yml
+scope.json
+targets.yaml
+targets.yml
+targets.json
+!scope.example.yaml
+!targets.example.yaml
