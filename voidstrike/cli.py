@@ -1,4 +1,12 @@
-"""VoidStrike command-line interface."""
+"""VoidStrike command-line interface.
+
+Usage is URL-first — point it at a target and go:
+
+    voidstrike "https://target.example/ping?host=127.0.0.1"
+
+An engagement scope file (``--scope``) is optional; supply one when you want
+VoidStrike to enforce which hosts it may touch.
+"""
 
 from __future__ import annotations
 
@@ -8,38 +16,36 @@ import os
 import sys
 
 from . import __version__
-from .authorization import (
-    AuthorizationError,
-    Engagement,
-    ScopeGuard,
-    ScopeViolation,
-    load_engagement,
-)
+from .authorization import Engagement, ScopeGuard, ScopeViolation, load_engagement
 from .banner import GREEN, RED, RESET, YELLOW, render_banner, render_legal
 from .config import Config
 from .engine.detector import Detector
 from .targets import default_header_injection, load_targets, target_from_url
 
+_COMMANDS = {"scan", "modules", "shell"}
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="voidstrike",
-        description="VoidStrike — AI-assisted RCE testing framework "
-                    "(authorized use only).",
-        epilog="Only test systems you are explicitly authorized to assess.",
+        description="VoidStrike — AI-assisted RCE testing framework. "
+                    "Only use this on authorized targets; unauthorized testing "
+                    "is illegal.",
     )
     p.add_argument("--version", action="version", version=f"VoidStrike {__version__}")
     p.add_argument("--no-color", action="store_true", help="disable colored output")
-    sub = p.add_subparsers(dest="command", required=True)
+    sub = p.add_subparsers(dest="command")
 
     # scan
-    scan = sub.add_parser("scan", help="scan authorized targets for RCE")
+    scan = sub.add_parser("scan", help="scan target URL(s) for RCE")
+    scan.add_argument("urls", nargs="*", help="target URL(s); query params become "
+                                              "injection points")
     scan.add_argument("-u", "--url", action="append", default=[],
-                      help="target URL (repeatable). Query params become injection points.")
+                      help="additional target URL (repeatable)")
     scan.add_argument("-t", "--targets", help="YAML/JSON file describing targets")
-    scan.add_argument("-s", "--scope", required=True,
-                      help="engagement/scope file (defines authorized in_scope hosts)")
-    scan.add_argument("-m", "--method", default="GET", help="HTTP method for --url targets")
+    scan.add_argument("-s", "--scope", help="optional engagement/scope file to "
+                                            "restrict which hosts may be tested")
+    scan.add_argument("-m", "--method", default="GET", help="HTTP method (default GET)")
     scan.add_argument("-M", "--modules", help="comma-separated module ids (default: all)")
     scan.add_argument("--headers", action="append", default=[],
                       help="extra header 'Name: value' (repeatable)")
@@ -50,18 +56,13 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--timeout", type=float, default=None, help="per-request timeout (s)")
     scan.add_argument("--proxy", default=None, help="HTTP(S) proxy URL (e.g. Burp)")
     scan.add_argument("--insecure", action="store_true", help="disable TLS verification")
-    scan.add_argument("--oob-domain", default=None,
-                      help="OAST collaborator domain for blind checks")
+    scan.add_argument("--oob-domain", default=None, help="OAST collaborator domain")
     scan.add_argument("--oob-listener", type=int, default=0,
                       help="start a local HTTP callback listener on this port")
     scan.add_argument("--no-ai", action="store_true", help="disable AI assistance")
     scan.add_argument("-o", "--output", default="voidstrike-results",
                       help="output directory for reports")
     scan.add_argument("-v", "--verbose", action="store_true")
-    scan.add_argument("--i-am-authorized", action="store_true",
-                      help="affirm you have written authorization to test the scope")
-    scan.add_argument("--operator", default=os.environ.get("USER", ""),
-                      help="operator name recorded in the audit log")
 
     # modules
     sub.add_parser("modules", help="list available detection modules")
@@ -70,9 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     shell = sub.add_parser("shell",
                            help="open an interactive command channel from a saved finding")
     shell.add_argument("-r", "--report", required=True, help="JSON report from a prior scan")
-    shell.add_argument("-s", "--scope", required=True, help="engagement/scope file")
-    shell.add_argument("--finding", help="finding id to use (default: first channel-capable)")
-    shell.add_argument("--i-am-authorized", action="store_true")
+    shell.add_argument("-s", "--scope", help="optional engagement/scope file")
+    shell.add_argument("--finding", help="finding id (default: first channel-capable)")
     shell.add_argument("--proxy", default=None)
     shell.add_argument("--insecure", action="store_true")
 
@@ -101,35 +101,26 @@ def _apply_http_overrides(config: Config, args) -> None:
         config.http.verify_tls = False
 
 
+def _make_guard(scope_path: str | None) -> ScopeGuard | None:
+    """Build a scope guard only if the operator supplied a scope file."""
+    if not scope_path:
+        return None
+    engagement = load_engagement(scope_path)
+    guard = ScopeGuard(engagement)
+    guard.grant_consent(operator=os.environ.get("USER", ""))
+    return guard
+
+
 def cmd_modules(args) -> int:
     from .modules import all_modules
 
     print(render_banner(use_color=not args.no_color))
     print()
     for cls in all_modules():
-        print(f"  {GREEN if not args.no_color else ''}{cls.name:<20}{RESET if not args.no_color else ''}"
-              f" {cls.vuln_class}  [{cls.severity.value}]")
+        c0 = GREEN if not args.no_color else ""
+        c1 = RESET if not args.no_color else ""
+        print(f"  {c0}{cls.name:<20}{c1} {cls.vuln_class}  [{cls.severity.value}]")
     return 0
-
-
-def _confirm_consent(guard: ScopeGuard, args, use_color: bool) -> bool:
-    if args.i_am_authorized:
-        guard.grant_consent(operator=getattr(args, "operator", ""))
-        return True
-    # Interactive fallback.
-    print(render_legal(use_color=use_color))
-    e = guard.engagement
-    print()
-    print(f"Engagement : {e.name}")
-    print(f"In scope   : {', '.join(e.in_scope) or '(none defined!)'}")
-    try:
-        ans = input("Type 'I AM AUTHORIZED' to proceed, anything else to abort: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        ans = ""
-    if ans == "I AM AUTHORIZED":
-        guard.grant_consent(operator=getattr(args, "operator", ""))
-        return True
-    return False
 
 
 def cmd_scan(args) -> int:
@@ -138,19 +129,8 @@ def cmd_scan(args) -> int:
     print(render_legal(use_color=use_color))
     print()
 
-    try:
-        engagement = load_engagement(args.scope)
-    except AuthorizationError as exc:
-        print(f"{RED if use_color else ''}[!] {exc}{RESET if use_color else ''}")
-        return 2
+    guard = _make_guard(args.scope)
 
-    guard = ScopeGuard(engagement)
-    if not _confirm_consent(guard, args, use_color):
-        print(f"{RED if use_color else ''}[!] Authorization not confirmed. Aborting."
-              f"{RESET if use_color else ''}")
-        return 3
-
-    # Build config.
     config = Config()
     config.use_color = use_color
     config.verbose = args.verbose
@@ -164,18 +144,17 @@ def cmd_scan(args) -> int:
         config.oob.enabled = True
         config.oob.listener_port = args.oob_listener
 
-    # Build targets.
     headers = _parse_headers(args.headers)
     hdr_inj = default_header_injection() if args.test_headers else []
     targets = []
-    for url in args.url:
+    for url in [*args.urls, *args.url]:
         targets.append(target_from_url(url, method=args.method, headers=headers,
                                        header_injection=hdr_inj))
     if args.targets:
         targets.extend(load_targets(args.targets))
     if not targets:
-        print(f"{RED if use_color else ''}[!] No targets. Use --url or --targets."
-              f"{RESET if use_color else ''}")
+        print(f"{RED if use_color else ''}[!] No targets. Pass a URL, e.g. "
+              f"voidstrike \"https://host/path?p=1\"{RESET if use_color else ''}")
         return 2
 
     module_names = [m.strip() for m in args.modules.split(",")] if args.modules else None
@@ -184,17 +163,17 @@ def cmd_scan(args) -> int:
     try:
         report = asyncio.run(detector.run(targets))
     except ScopeViolation as exc:
-        print(f"{RED if use_color else ''}[!] Scope violation: {exc}{RESET if use_color else ''}")
+        print(f"{RED if use_color else ''}[!] Scope violation: {exc}"
+              f"{RESET if use_color else ''}")
         return 3
 
-    # Persist outputs.
     os.makedirs(config.output_dir, exist_ok=True)
     json_path = os.path.join(config.output_dir, "report.json")
     md_path = os.path.join(config.output_dir, "report.md")
-    audit_path = os.path.join(config.output_dir, "audit.json")
     report.write_json(json_path)
     report.write_markdown(md_path)
-    guard.write_audit(audit_path)
+    if guard is not None:
+        guard.write_audit(os.path.join(config.output_dir, "audit.json"))
 
     print()
     n = len(report.findings)
@@ -205,7 +184,6 @@ def cmd_scan(args) -> int:
     if report.ai_recommendation:
         print(f"    Suggested next step: {report.ai_recommendation}")
     print(f"    Reports: {json_path} , {md_path}")
-    print(f"    Audit log: {audit_path}")
     return 0
 
 
@@ -214,22 +192,14 @@ def cmd_shell(args) -> int:
 
     from .ai import AIEngine, Analyzer
     from .config import Config as _Config
-    from .engine.models import Finding, InjectionPoint, Severity, Confidence, Target
+    from .engine.models import Confidence, Finding, InjectionPoint, Severity, Target
     from .engine.session import Session
     from .http_client import HttpClient
     from .oob import OOBManager
     from .shell import InteractiveShell, RCEChannel
     from .shell.channel import ChannelError
 
-    use_color = True
-    engagement = load_engagement(args.scope)
-    guard = ScopeGuard(engagement)
-    if not args.i_am_authorized:
-        if not _confirm_consent(guard, args, use_color):
-            print("Authorization not confirmed. Aborting.")
-            return 3
-    else:
-        guard.grant_consent()
+    guard = _make_guard(args.scope)
 
     with open(args.report, "r", encoding="utf-8") as fh:
         data = json.load(fh)
@@ -238,11 +208,13 @@ def cmd_shell(args) -> int:
     for f in findings:
         if args.finding and f.get("finding_id") != args.finding:
             continue
-        if f.get("oracle") == "output" and f.get("module") in {"cmd_injection", "code_injection"}:
+        if f.get("oracle") == "output" and f.get("module") in {"cmd_injection",
+                                                                "code_injection"}:
             chosen = f
             break
     if not chosen:
-        print("[!] No channel-capable finding (output-based cmd/code injection) in report.")
+        print("[!] No channel-capable finding (output-based cmd/code injection) "
+              "in report.")
         return 2
 
     finding = Finding(
@@ -269,17 +241,35 @@ def cmd_shell(args) -> int:
             except ChannelError as exc:
                 print(f"[!] {exc}")
                 return
-            await InteractiveShell(channel, use_color=use_color).start()
+            await InteractiveShell(channel, use_color=not getattr(args, "no_color", False)
+                                   ).start()
 
     asyncio.run(_go())
     return 0
 
 
+def _inject_default_command(argv: list[str]) -> list[str]:
+    """Allow ``voidstrike <url>`` with no explicit subcommand -> implicit scan."""
+    argv = list(argv)
+    for i, tok in enumerate(argv):
+        if tok in ("--no-color",):
+            continue
+        if tok in ("--version", "-h", "--help"):
+            return argv
+        if tok in _COMMANDS:
+            return argv
+        # First real positional and it isn't a command -> default to scan.
+        return argv[:i] + ["scan"] + argv[i:]
+    return argv
+
+
 def main(argv: list[str] | None = None) -> int:
+    raw = sys.argv[1:] if argv is None else list(argv)
+    raw = _inject_default_command(raw)
     parser = build_parser()
-    args = parser.parse_args(argv)
-    if not hasattr(args, "no_color"):
-        args.no_color = False
+    args = parser.parse_args(raw)
+    if not getattr(args, "no_color", False):
+        args.no_color = getattr(args, "no_color", False)
     try:
         if args.command == "scan":
             return cmd_scan(args)
@@ -287,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_modules(args)
         if args.command == "shell":
             return cmd_shell(args)
-    except (AuthorizationError, ScopeViolation) as exc:
+    except ScopeViolation as exc:
         print(f"[!] {exc}", file=sys.stderr)
         return 3
     parser.print_help()

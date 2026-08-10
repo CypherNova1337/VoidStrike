@@ -8,7 +8,7 @@ findings into a :class:`~voidstrike.reporting.report.Report`.
 from __future__ import annotations
 
 from ..ai import AIEngine, Analyzer
-from ..authorization import ScopeGuard
+from ..authorization import Engagement, ScopeGuard
 from ..config import Config
 from ..http_client import HttpClient
 from ..oob import OOBManager
@@ -19,7 +19,7 @@ from .session import Session
 
 
 class Detector:
-    def __init__(self, config: Config, guard: ScopeGuard, *,
+    def __init__(self, config: Config, guard: ScopeGuard | None = None, *,
                  module_names: list[str] | None = None):
         self.config = config
         self.guard = guard
@@ -33,7 +33,8 @@ class Detector:
         ai_engine = AIEngine(self.config.ai)
         analyzer = Analyzer(ai_engine)
         oob = OOBManager(self.config.oob)
-        report = Report(self.guard.engagement, ai_status=ai_engine.status)
+        engagement = self.guard.engagement if self.guard else Engagement(name="ad-hoc")
+        report = Report(engagement, ai_status=ai_engine.status)
 
         if self.module_names:
             module_classes = [m for m in (get_module(n) for n in self.module_names) if m]
@@ -54,8 +55,9 @@ class Detector:
             async with HttpClient(self.config.http, self.guard) as http:
                 session = Session(self.config, http, analyzer, oob, self.log)
                 for target in targets:
-                    # Scope is enforced per-request too, but fail fast here.
-                    if not self.guard.is_allowed(target.url):
+                    # When a scope guard is configured it is enforced per-request
+                    # too; here we just fail fast on out-of-scope targets.
+                    if self.guard is not None and not self.guard.is_allowed(target.url):
                         self.log.warning(f"skipping out-of-scope target: {target.url}")
                         continue
                     report.targets_tested += 1

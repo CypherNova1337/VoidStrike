@@ -10,7 +10,7 @@ authorization from its owner. See LICENSE and SECURITY.md.
 """
 
 __title__ = "VoidStrike"
-__project__ = "VoidSec-Hub / RCE-Robot"
+__project__ = "VoidSec-Hub / VoidStrike"
 __version__ = "1.0.0"
 __author__ = "VoidSec-Hub"
 __license__ = "MIT (authorized-use restricted — see LICENSE)"

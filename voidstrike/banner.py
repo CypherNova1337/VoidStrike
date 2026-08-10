@@ -23,12 +23,7 @@ _ART = r"""
 """
 
 LEGAL_NOTICE = (
-    "AUTHORIZED USE ONLY. VoidStrike actively sends attack payloads to the "
-    "targets you configure. Only run it against systems you own or have "
-    "explicit, written permission to test. Unauthorized access to computer "
-    "systems is illegal in most jurisdictions (e.g. the U.S. CFAA, the UK "
-    "Computer Misuse Act, and equivalent laws worldwide). You are solely "
-    "responsible for how you use this tool."
+    "Only use this on authorized targets. Unauthorized testing is illegal."
 )
 
 
@@ -46,7 +41,7 @@ def render_banner(use_color: bool = True) -> str:
         color(f"  VoidStrike v{__version__}", BOLD + CYAN, use_color)
         + color("  —  AI-assisted RCE testing framework", DIM, use_color)
     )
-    lines.append(color("  A VoidSec-Hub project (RCE-Robot)", DIM, use_color))
+    lines.append(color("  A VoidSec-Hub project", DIM, use_color))
     lines.append("")
     lines.append(color("  " + "=" * 68, DIM, use_color))
     lines.append(color("  !! AUTHORIZED SECURITY TESTING ONLY !!", BOLD + RED, use_color))
