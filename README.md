@@ -21,23 +21,12 @@ interactive command channel.
 
 ---
 
-## ⚠️ Authorized use only
+## ⚠️ Only use this on authorized targets. Unauthorized testing is illegal.
 
-VoidStrike sends **real attack payloads** to whatever you point it at. Use it
-**only** on systems you own or are **explicitly authorized in writing** to test.
-Unauthorized access to computer systems is illegal in most jurisdictions (U.S.
-CFAA, U.K. Computer Misuse Act, and equivalents). You are solely responsible for
-your use of this tool. See [`LICENSE`](LICENSE) and [`SECURITY.md`](SECURITY.md).
+VoidStrike sends real attack payloads to whatever you point it at.
 
-VoidStrike is built to keep you honest:
-
-- it **refuses to run without a defined authorized scope** and rejects any host
-  outside it,
-- it requires you to **affirm authorization** before sending a single payload,
-- it uses **non-destructive proofs of concept** (echo a marker, brief sleep, or
-  OOB callback) — never destructive commands,
-- it is **single-target focused** — no mass/internet-wide scanning, no
-  self-propagation.
+Optional: pass `--scope scope.yaml` to have VoidStrike enforce which hosts it may
+touch during an engagement. It's off by default so the tool stays quick to use.
 
 ---
 
@@ -57,8 +46,8 @@ VoidStrike is built to keep you honest:
 ## Install
 
 ```bash
-git clone https://github.com/CypherNova1337/RCE-Robot.git
-cd RCE-Robot
+git clone https://github.com/CypherNova1337/VoidStrike.git
+cd VoidStrike
 
 # Runs as-is on Python 3.10+. Optional extras make it faster:
 pip install -r requirements.txt          # httpx + PyYAML
@@ -70,23 +59,13 @@ No dependencies? It still works — `python -m voidstrike ...`.
 
 ## Quick start
 
-1. **Define your authorized scope** (copy and edit the example):
+Just point it at a URL — query parameters become injection points:
 
-   ```bash
-   cp scope.example.yaml scope.yaml
-   $EDITOR scope.yaml     # list ONLY hosts you are permitted to test
-   ```
+```bash
+python -m voidstrike "https://app.example.com/ping?host=127.0.0.1"
+```
 
-2. **Scan a target** (query parameters become injection points):
-
-   ```bash
-   python -m voidstrike scan \
-     --scope scope.yaml \
-     --url "https://app.example.com/ping?host=127.0.0.1" \
-     --i-am-authorized
-   ```
-
-3. **Read the report** in `voidstrike-results/report.md` (and `report.json`).
+That's it. The report lands in `voidstrike-results/report.md` (and `report.json`).
 
 List detection modules any time:
 
@@ -97,11 +76,12 @@ python -m voidstrike modules
 ## Usage
 
 ```
-python -m voidstrike scan --scope scope.yaml [options]
+python -m voidstrike <url> [url...] [options]        # implicit scan
+python -m voidstrike scan <url> [url...] [options]   # explicit
 
-  -u, --url URL          target URL (repeatable); query params = injection points
   -t, --targets FILE     YAML/JSON targets file (see targets.example.yaml)
-  -m, --method METHOD    HTTP method for --url targets (default GET)
+  -s, --scope FILE       OPTIONAL scope file to restrict which hosts may be hit
+  -m, --method METHOD    HTTP method (default GET)
   -M, --modules ids      comma-separated module ids (default: all)
       --headers 'K: V'   extra header (repeatable)
       --test-headers     also fuzz common headers (User-Agent, X-Forwarded-For, ...)
@@ -112,7 +92,6 @@ python -m voidstrike scan --scope scope.yaml [options]
       --oob-listener P   start a local HTTP callback listener on port P
       --no-ai            disable the LLM layer (heuristics only)
   -o, --output DIR       report output directory
-      --i-am-authorized  affirm written authorization (skips the prompt)
 ```
 
 ### Post-exploitation shell
@@ -120,10 +99,7 @@ python -m voidstrike scan --scope scope.yaml [options]
 After a scan confirms an output-based command/code injection, open a channel:
 
 ```bash
-python -m voidstrike shell \
-  --scope scope.yaml \
-  --report voidstrike-results/report.json \
-  --i-am-authorized
+python -m voidstrike shell --report voidstrike-results/report.json
 ```
 
 ```
@@ -166,12 +142,10 @@ callbacks to infrastructure you control:
 
 ```bash
 # Hosted collaborator (Interactsh-style) domain:
-python -m voidstrike scan --scope scope.yaml -t targets.yaml \
-    --oob-domain your-oast-domain.example --i-am-authorized
+python -m voidstrike "https://app.example.com/" --oob-domain your-oast-domain.example
 
 # Or a local listener when you control the network path:
-python -m voidstrike scan --scope scope.yaml -t targets.yaml \
-    --oob-listener 8000 --i-am-authorized
+python -m voidstrike "https://app.example.com/" --oob-listener 8000
 ```
 
 ## Architecture

@@ -27,7 +27,7 @@ all = ["httpx>=0.24", "PyYAML>=6.0"]
 voidstrike = "voidstrike.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/CypherNova1337/RCE-Robot"
+Homepage = "https://github.com/CypherNova1337/VoidStrike"
 
 [tool.setuptools.packages.find]
 include = ["voidstrike*"]

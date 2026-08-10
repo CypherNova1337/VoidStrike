@@ -21,16 +21,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-ADDITIONAL USE NOTICE (not a modification of the MIT terms above)
-
-VoidStrike is offensive-security software that actively sends attack payloads
-to the hosts it is pointed at. It is intended solely for AUTHORIZED security
-testing — assessments you perform on systems you own or for which you hold
-explicit, written permission from the system owner.
-
-Unauthorized access to, or interference with, computer systems is illegal in
-most jurisdictions (including but not limited to the U.S. Computer Fraud and
-Abuse Act, the U.K. Computer Misuse Act, and comparable laws worldwide). By
-using this software you agree that you are solely responsible for ensuring you
-have proper authorization, and that the authors bear no responsibility for any
-misuse or damage.
+USE NOTICE: Only use this software on authorized targets. Unauthorized testing
+is illegal. You are solely responsible for how you use it.
