@@ -22,7 +22,7 @@ from .config import Config
 from .engine.detector import Detector
 from .targets import default_header_injection, load_targets, target_from_url
 
-_COMMANDS = {"scan", "modules", "shell"}
+_COMMANDS = {"scan", "modules", "shell", "brain"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,6 +66,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # modules
     sub.add_parser("modules", help="list available detection modules")
+
+    # brain
+    brain = sub.add_parser("brain", help="show the built-in offensive knowledge base")
+    brain.add_argument("--class", dest="vuln_class", default=None,
+                       help="show payloads for one vuln class (substring match)")
 
     # shell
     shell = sub.add_parser("shell",
@@ -120,6 +125,59 @@ def cmd_modules(args) -> int:
         c0 = GREEN if not args.no_color else ""
         c1 = RESET if not args.no_color else ""
         print(f"  {c0}{cls.name:<20}{c1} {cls.vuln_class}  [{cls.severity.value}]")
+    return 0
+
+
+def _render(payloads) -> list[str]:
+    """Format technique templates for display with sample placeholders."""
+    out = []
+    for tmpl in payloads:
+        try:
+            out.append(tmpl.format(marker="MARKER", host="oob.host", sleep=6))
+        except (KeyError, IndexError, ValueError):
+            out.append(tmpl)
+    return out
+
+
+def cmd_brain(args) -> int:
+    from .ai import AIEngine, Brain, knowledge as kb
+    from .config import Config as _Config
+
+    use_color = not args.no_color
+    print(render_banner(use_color=use_color))
+    brain = Brain(AIEngine(_Config().ai))
+    corpus = kb.corpus_summary()
+    total_t = sum(t for _, t, _ in corpus)
+    total_p = sum(p for _, _, p in corpus)
+    c = (lambda s, col: f"{col}{s}{RESET}") if use_color else (lambda s, col: s)
+    print()
+    print(c(f"  Brain mode: {brain.mode}   "
+            f"({total_t} manoeuvres, {total_p} payload templates, "
+            f"{len(kb.EVASIONS)} evasion transforms)", GREEN))
+    print(c(f"  LLM augmentation: {brain.engine.status}", YELLOW))
+    print()
+    if args.vuln_class:
+        q = args.vuln_class.lower()
+        techs = [t for t in kb.TECHNIQUES
+                 if q in t.vuln_class.lower() or q in t.id.lower()
+                 or q in " ".join(t.tags)]
+        if not techs:
+            print(c("  No techniques match that class. Try: cmd, ssti, code, "
+                    "el/jndi, deser, upload.", YELLOW))
+            return 0
+        for t in techs:
+            print(c(f"  [{t.oracle}] {t.name}", GREEN)
+                  + f"  tags: {', '.join(t.tags)}")
+            for p in _render(t.payloads):
+                print(f"      {p}")
+        return 0
+    for cls, tcount, pcount in corpus:
+        print(c(f"  {cls}", GREEN) + f"  — {tcount} techniques, {pcount} payloads")
+        for t in [x for x in kb.TECHNIQUES if x.vuln_class == cls]:
+            print(f"      [{t.oracle:<6}] {t.name}")
+    print()
+    print(c("  Run `voidstrike brain --class ssti` to see payloads for one class.",
+            YELLOW))
     return 0
 
 
@@ -190,7 +248,7 @@ def cmd_scan(args) -> int:
 def cmd_shell(args) -> int:
     import json
 
-    from .ai import AIEngine, Analyzer
+    from .ai import AIEngine, Brain
     from .config import Config as _Config
     from .engine.models import Confidence, Finding, InjectionPoint, Severity, Target
     from .engine.session import Session
@@ -234,7 +292,7 @@ def cmd_shell(args) -> int:
 
     async def _go():
         async with HttpClient(config.http, guard) as http:
-            session = Session(config, http, Analyzer(AIEngine(config.ai)),
+            session = Session(config, http, Brain(AIEngine(config.ai)),
                               OOBManager(config.oob))
             try:
                 channel = RCEChannel(session, point, finding)
@@ -275,6 +333,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_scan(args)
         if args.command == "modules":
             return cmd_modules(args)
+        if args.command == "brain":
+            return cmd_brain(args)
         if args.command == "shell":
             return cmd_shell(args)
     except ScopeViolation as exc:
