@@ -3,9 +3,6 @@
 Usage is URL-first — point it at a target and go:
 
     voidstrike "https://target.example/ping?host=127.0.0.1"
-
-An engagement scope file (``--scope``) is optional; supply one when you want
-VoidStrike to enforce which hosts it may touch.
 """
 
 from __future__ import annotations
@@ -16,7 +13,6 @@ import os
 import sys
 
 from . import __version__
-from .authorization import Engagement, ScopeGuard, ScopeViolation, load_engagement
 from .banner import GREEN, RED, RESET, YELLOW, render_banner, render_legal
 from .config import Config
 from .engine.detector import Detector
@@ -43,8 +39,6 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("-u", "--url", action="append", default=[],
                       help="additional target URL (repeatable)")
     scan.add_argument("-t", "--targets", help="YAML/JSON file describing targets")
-    scan.add_argument("-s", "--scope", help="optional engagement/scope file to "
-                                            "restrict which hosts may be tested")
     scan.add_argument("-m", "--method", default="GET", help="HTTP method (default GET)")
     scan.add_argument("-M", "--modules", help="comma-separated module ids (default: all)")
     scan.add_argument("--headers", action="append", default=[],
@@ -76,7 +70,6 @@ def build_parser() -> argparse.ArgumentParser:
     shell = sub.add_parser("shell",
                            help="open an interactive command channel from a saved finding")
     shell.add_argument("-r", "--report", required=True, help="JSON report from a prior scan")
-    shell.add_argument("-s", "--scope", help="optional engagement/scope file")
     shell.add_argument("--finding", help="finding id (default: first channel-capable)")
     shell.add_argument("--proxy", default=None)
     shell.add_argument("--insecure", action="store_true")
@@ -104,16 +97,6 @@ def _apply_http_overrides(config: Config, args) -> None:
         config.http.proxy = args.proxy
     if getattr(args, "insecure", False):
         config.http.verify_tls = False
-
-
-def _make_guard(scope_path: str | None) -> ScopeGuard | None:
-    """Build a scope guard only if the operator supplied a scope file."""
-    if not scope_path:
-        return None
-    engagement = load_engagement(scope_path)
-    guard = ScopeGuard(engagement)
-    guard.grant_consent(operator=os.environ.get("USER", ""))
-    return guard
 
 
 def cmd_modules(args) -> int:
@@ -187,8 +170,6 @@ def cmd_scan(args) -> int:
     print(render_legal(use_color=use_color))
     print()
 
-    guard = _make_guard(args.scope)
-
     config = Config()
     config.use_color = use_color
     config.verbose = args.verbose
@@ -217,21 +198,14 @@ def cmd_scan(args) -> int:
 
     module_names = [m.strip() for m in args.modules.split(",")] if args.modules else None
 
-    detector = Detector(config, guard, module_names=module_names)
-    try:
-        report = asyncio.run(detector.run(targets))
-    except ScopeViolation as exc:
-        print(f"{RED if use_color else ''}[!] Scope violation: {exc}"
-              f"{RESET if use_color else ''}")
-        return 3
+    detector = Detector(config, module_names=module_names)
+    report = asyncio.run(detector.run(targets))
 
     os.makedirs(config.output_dir, exist_ok=True)
     json_path = os.path.join(config.output_dir, "report.json")
     md_path = os.path.join(config.output_dir, "report.md")
     report.write_json(json_path)
     report.write_markdown(md_path)
-    if guard is not None:
-        guard.write_audit(os.path.join(config.output_dir, "audit.json"))
 
     print()
     n = len(report.findings)
@@ -256,8 +230,6 @@ def cmd_shell(args) -> int:
     from .oob import OOBManager
     from .shell import InteractiveShell, RCEChannel
     from .shell.channel import ChannelError
-
-    guard = _make_guard(args.scope)
 
     with open(args.report, "r", encoding="utf-8") as fh:
         data = json.load(fh)
@@ -291,7 +263,7 @@ def cmd_shell(args) -> int:
     _apply_http_overrides(config, args)
 
     async def _go():
-        async with HttpClient(config.http, guard) as http:
+        async with HttpClient(config.http) as http:
             session = Session(config, http, Brain(AIEngine(config.ai)),
                               OOBManager(config.oob))
             try:
@@ -328,18 +300,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(raw)
     if not getattr(args, "no_color", False):
         args.no_color = getattr(args, "no_color", False)
-    try:
-        if args.command == "scan":
-            return cmd_scan(args)
-        if args.command == "modules":
-            return cmd_modules(args)
-        if args.command == "brain":
-            return cmd_brain(args)
-        if args.command == "shell":
-            return cmd_shell(args)
-    except ScopeViolation as exc:
-        print(f"[!] {exc}", file=sys.stderr)
-        return 3
+    if args.command == "scan":
+        return cmd_scan(args)
+    if args.command == "modules":
+        return cmd_modules(args)
+    if args.command == "brain":
+        return cmd_brain(args)
+    if args.command == "shell":
+        return cmd_shell(args)
     parser.print_help()
     return 1
 

@@ -1,7 +1,7 @@
 """Detection orchestrator.
 
-The :class:`Detector` wires together the scope guard, HTTP client, OOB manager
-and AI analyzer, then runs the selected modules across each target, collecting
+The :class:`Detector` wires together the HTTP client, OOB manager and the
+offensive Brain, then runs the selected modules across each target, collecting
 findings into a :class:`~voidstrike.reporting.report.Report`.
 """
 
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from ..ai import AIEngine, Brain
 from ..ai import knowledge as kb
-from ..authorization import Engagement, ScopeGuard
 from ..config import Config
 from ..http_client import HttpClient
 from ..oob import OOBManager
@@ -20,10 +19,8 @@ from .session import Session
 
 
 class Detector:
-    def __init__(self, config: Config, guard: ScopeGuard | None = None, *,
-                 module_names: list[str] | None = None):
+    def __init__(self, config: Config, *, module_names: list[str] | None = None):
         self.config = config
-        self.guard = guard
         self.module_names = module_names
         self.log = get_logger(use_color=config.use_color,
                               level=10 if config.verbose else 20)
@@ -34,11 +31,9 @@ class Detector:
         ai_engine = AIEngine(self.config.ai)
         brain = Brain(ai_engine)
         oob = OOBManager(self.config.oob)
-        engagement = self.guard.engagement if self.guard else Engagement(name="ad-hoc")
         corpus = kb.corpus_summary()
         techniques_total = sum(t for _, t, _ in corpus)
-        report = Report(engagement,
-                        ai_status=f"brain:{brain.mode} ({ai_engine.status})")
+        report = Report(ai_status=f"brain:{brain.mode} ({ai_engine.status})")
 
         if self.module_names:
             module_classes = [m for m in (get_module(n) for n in self.module_names) if m]
@@ -59,14 +54,9 @@ class Detector:
 
         await oob.start()
         try:
-            async with HttpClient(self.config.http, self.guard) as http:
+            async with HttpClient(self.config.http) as http:
                 session = Session(self.config, http, brain, oob, self.log)
                 for target in targets:
-                    # When a scope guard is configured it is enforced per-request
-                    # too; here we just fail fast on out-of-scope targets.
-                    if self.guard is not None and not self.guard.is_allowed(target.url):
-                        self.log.warning(f"skipping out-of-scope target: {target.url}")
-                        continue
                     report.targets_tested += 1
                     self.log.info(f"Testing {target.method} {target.url}")
                     for cls in module_classes:

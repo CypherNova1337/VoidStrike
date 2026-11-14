@@ -12,18 +12,13 @@ env/
 .pytest_cache/
 .ruff_cache/
 
-# VoidStrike runtime output (may contain sensitive engagement data)
+# VoidStrike runtime output (may contain sensitive data)
 voidstrike-results/
 *-results/
 *.report.json
-audit.json
 
-# Never commit real engagement scope / target files or credentials
-scope.yaml
-scope.yml
-scope.json
+# Don't commit your own private target files
 targets.yaml
 targets.yml
 targets.json
-!scope.example.yaml
 !targets.example.yaml

@@ -33,7 +33,6 @@ without reconstructing the attack by hand.
 - **Decides per request**, escalating and adapting rather than replaying a fixed
   list.
 - **Out-of-band confirmation** for the cases that produce no visible output.
-- **Scope files**, so a run can be restricted to hosts you're allowed to touch.
 - **Reports with the reproducing request**, not just a claim.
 
 ## Install
@@ -55,13 +54,13 @@ voidstrike scan 'https://app.example/search?q=test'
 
 Query parameters become injection points.
 
-**Several targets, restricted to an agreed scope**
+**Several targets at once**
 
 ```bash
-voidstrike scan -t targets.yaml -s scope.yaml -o reports/
+voidstrike scan -t targets.yaml -o reports/
 ```
 
-Copy `scope.example.yaml` and `targets.example.yaml` to start from.
+Copy `targets.example.yaml` to start from.
 
 **Just one class of bug**
 
@@ -118,7 +117,6 @@ voidstrike brain
 |---|---|---|
 | `urls` / `-u` | — | Target URL(s) |
 | `-t` | — | YAML/JSON file describing targets |
-| `-s` | — | Scope file restricting which hosts may be tested |
 | `-m` | `GET` | HTTP method |
 | `-M` | all | Comma-separated module ids |
 | `--headers` | — | Extra header (repeatable) |
@@ -136,10 +134,8 @@ voidstrike brain
 ## Good to know
 
 - **Confirming RCE means running a command on someone's server.** Even a harmless
-  one is execution. Be sure that's in scope before you start, and keep what you
-  run to the minimum that proves it.
-- **Use the scope file.** It exists so a wildcard target list can't wander onto a
-  host that was never in the engagement.
+  one is execution. Be sure the target is authorised before you start, and keep
+  what you run to the minimum that proves it.
 - **Without `--oob-domain` you will miss the blind cases**, which are a large
   share of real-world RCE.
 - **Deserialisation and upload tests leave artefacts.** Files get written.
