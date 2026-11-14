@@ -84,7 +84,7 @@ class Brain:
     async def assess(self, *, vuln_class: str, marker: str, payload: str,
                      status: int, snippet: str, elapsed: float,
                      baseline: float) -> Verdict:
-        base = self._expert_verdict(marker, status, snippet, elapsed, baseline)
+        base = self._expert_verdict(marker, status, snippet, elapsed, baseline, payload)
         if not self.engine.available:
             return base
 
@@ -113,9 +113,19 @@ class Brain:
 
     @staticmethod
     def _expert_verdict(marker: str, status: int, snippet: str, elapsed: float,
-                        baseline: float) -> Verdict:
+                        baseline: float, payload: str = "") -> Verdict:
         if marker and marker in snippet:
-            return Verdict("executed", 0.97, "success marker reflected in response",
+            # Reflection, not execution: the app echoed our input back verbatim.
+            # The marker only proves RCE if it appears WITHOUT the payload
+            # syntax that carried it — otherwise it is a reflected string.
+            if _looks_reflected(payload, snippet, marker):
+                return Verdict("reflected", 0.8,
+                               "payload reflected verbatim — not execution",
+                               evidence=marker)
+            # A genuine-looking hit, but still only a CANDIDATE: the module must
+            # confirm it with a transformation probe before it becomes a finding.
+            return Verdict("executed", 0.9,
+                           "success marker present (pending transformation confirmation)",
                            evidence=marker)
         if baseline > 0 and elapsed >= baseline + 4.0:
             return Verdict("inconclusive", 0.6,
@@ -176,3 +186,25 @@ def _string_list(data, limit: int) -> list[str]:
             if isinstance(data.get(key), list):
                 return [str(x) for x in data[key]][:limit]
     return []
+
+
+def _looks_reflected(payload: str, snippet: str, marker: str) -> bool:
+    """True if the marker appears only because the payload was echoed back.
+
+    Execution strips the command syntax and leaves the marker alone; reflection
+    preserves the payload text around it. So if the marker still carries its
+    payload-side neighbours in the response, it was reflected, not executed.
+    """
+    if not payload or marker not in payload:
+        return False
+    # Whole payload (or the chunk from the first command keyword onward) echoed.
+    if payload in snippet:
+        return True
+    # The characters immediately before the marker in the payload still precede
+    # it in the response → the surrounding syntax was echoed verbatim.
+    idx = payload.find(marker)
+    prefix = payload[max(0, idx - 6):idx]
+    if prefix.strip() and (prefix + marker) in snippet:
+        return True
+    return False
+

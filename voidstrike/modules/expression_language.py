@@ -13,6 +13,8 @@ lookup to infrastructure the tester controls (no second-stage class is served).
 
 from __future__ import annotations
 
+import secrets
+
 from ..engine.models import Severity, Target
 from .base import Module
 
@@ -27,6 +29,17 @@ class ExpressionLanguage(Module):
         "and restrict outbound network egress from application servers."
     )
 
+    def confirmation_probes(self) -> list[tuple[str, str]]:
+        """OGNL/SpEL arithmetic proofs: the product appears only on evaluation."""
+        a = secrets.randbelow(900) + 100
+        b = secrets.randbelow(900) + 100
+        p = str(a * b)
+        return [
+            (f"%{{{a}*{b}}}", p),   # OGNL
+            (f"#{{{a}*{b}}}", p),   # SpEL
+            (f"${{{a}*{b}}}", p),   # JSP EL / Spring
+        ]
+
     async def run(self, target: Target) -> None:
         # JNDI is frequently reachable via logged headers; include common ones.
         for point in target.injection_points():
@@ -38,7 +51,6 @@ class ExpressionLanguage(Module):
         # OGNL / SpEL / MVEL execution payloads planned from the corpus.
         payloads = await self.plan(marker=marker, oracle="output",
                                    context=f"OGNL/SpEL EL injection at {point.describe()}")
-        # Arithmetic sanity (49) as a secondary evaluator signal.
         for payload in payloads:
             result = await self.s.probe(
                 point=point, payload=payload, marker=marker,
@@ -46,18 +58,19 @@ class ExpressionLanguage(Module):
             )
             if result is None:
                 return False
-            body = result.response.text
-            if marker in body:
+            if marker in result.response.text:
+                # Confirm with reflection-proof arithmetic before recording.
+                confirmed, why = await self.confirm_execution(point, result)
+                if not confirmed:
+                    self.log.debug(f"[expression_language] candidate at "
+                                   f"{point.describe()} rejected ({why})")
+                    continue
                 result.verdict.verdict = "executed"
-                result.verdict.confidence = 0.9
-                result.verdict.signal = "EL expression executed (marker echoed)"
-                result.verdict.evidence = marker
+                result.verdict.confidence = 0.95
+                result.verdict.signal = "EL expression evaluated"
+                result.verdict.evidence = f"{marker} | {why}"
                 self._record(result, oracle="output")
                 return True
-            if "49" in body and "7*7" in payload and "7*7" not in body:
-                self.log.info(
-                    f"[expression_language] evaluator signal (49) at {point.describe()}"
-                )
         return False
 
     async def _check_jndi(self, point) -> bool:

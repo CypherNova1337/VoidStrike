@@ -32,6 +32,11 @@ without reconstructing the attack by hand.
   expression language and JNDI, insecure deserialisation, unrestricted upload.
 - **Decides per request**, escalating and adapting rather than replaying a fixed
   list.
+- **Confirms execution before reporting it.** A marker in the response isn't
+  enough — reflected input looks identical. Every output-oracle hit is re-tested
+  with an arithmetic probe whose product can only appear if the server actually
+  executed it, so reflected payloads and error pages don't become false
+  "successes".
 - **Out-of-band confirmation** for the cases that produce no visible output.
 - **Reports with the reproducing request**, not just a claim.
 

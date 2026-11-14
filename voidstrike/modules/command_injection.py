@@ -8,6 +8,8 @@ echo a random marker, sleep briefly, or trigger an out-of-band lookup.
 
 from __future__ import annotations
 
+import secrets
+
 from ..engine.models import Confidence, Severity, Target
 from .base import Module
 
@@ -21,6 +23,20 @@ class CommandInjection(Module):
         "(execve with an argument vector, subprocess with shell=False), strict "
         "allow-lists, and drop shell metacharacters. Run with least privilege."
     )
+
+    def confirmation_probes(self) -> list[tuple[str, str]]:
+        """Shell-arithmetic proofs: the product appears only if the shell ran."""
+        a = secrets.randbelow(9000) + 1000
+        b = secrets.randbelow(9000) + 1000
+        p = str(a * b)
+        probes: list[tuple[str, str]] = []
+        for sep in (";", "|", "&&", "&", "\n", "%0a"):
+            probes.append((f"{sep} echo $(({a}*{b}))", p))
+            probes.append((f"{sep} expr {a} \\* {b}", p))
+        probes.append((f"`expr {a} \\* {b}`", p))
+        probes.append((f"$(expr {a} \\* {b})", p))
+        probes.append((f"& set /a {a}*{b}", p))  # Windows cmd
+        return probes
 
     async def run(self, target: Target) -> None:
         for point in target.injection_points():

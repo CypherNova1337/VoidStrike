@@ -40,6 +40,14 @@ class SSTI(Module):
         "*{{{a}*{b}}}",             # Thymeleaf spring
     ]
 
+    def confirmation_probes(self) -> list[tuple[str, str]]:
+        """Template-arithmetic proofs: the product appears only on evaluation."""
+        a = secrets.randbelow(900) + 100
+        b = secrets.randbelow(900) + 100
+        p = str(a * b)
+        return [(syntax.format(a=a, b=b), p)
+                for syntax in self._ARITH_SYNTAX if syntax != "{a}*{b}"]
+
     async def run(self, target: Target) -> None:
         for point in target.injection_points():
             evaluator = await self._probe_arithmetic(point)
