@@ -13,9 +13,6 @@ own or are authorized to test.
   do not run destructive commands, and payload volume is capped per module.
 - **Single-target focus.** VoidStrike tests the specific URLs you give it. It does
   not do mass/internet-wide scanning or self-propagation.
-- **Optional scope enforcement.** For engagements where you want a guardrail, pass
-  `--scope scope.yaml` and VoidStrike will refuse to touch hosts outside it and
-  write an audit log. It's optional and off by default.
 - **Cleanup reminders.** Any artifact left on a target (e.g. a benign file-upload
   test file) is flagged in the run log and report so you can remove it.
 

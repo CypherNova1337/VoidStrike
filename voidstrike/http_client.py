@@ -1,9 +1,8 @@
-"""Asynchronous HTTP client with rate limiting and a scope-aware guard.
+"""Asynchronous HTTP client with rate limiting.
 
 The client prefers ``httpx`` when it is installed and transparently falls back
 to a stdlib (``urllib``) backend executed in a thread pool, so VoidStrike runs
-even in minimal environments. Every request is validated against the active
-:class:`~voidstrike.authorization.ScopeGuard` before it leaves the process.
+even in minimal environments.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
-from .authorization import ScopeGuard
 from .config import HttpConfig
 
 
@@ -63,9 +61,8 @@ class RateLimiter:
 
 
 class HttpClient:
-    def __init__(self, config: HttpConfig, guard: ScopeGuard | None = None):
+    def __init__(self, config: HttpConfig):
         self.config = config
-        self.guard = guard
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._limiter = RateLimiter(config.requests_per_second)
         self._stats = {"sent": 0, "errors": 0}
@@ -102,10 +99,6 @@ class HttpClient:
     async def request(self, method: str, url: str, *, params: dict | None = None,
                       data: Any = None, json: Any = None, headers: dict | None = None,
                       files: dict | None = None, allow_redirects: bool = True) -> Response:
-        # Scope enforcement — refuses to touch out-of-scope hosts.
-        if self.guard is not None:
-            self.guard.check(url)
-
         merged_headers = {
             "User-Agent": self.config.user_agent,
             **self.config.default_headers,

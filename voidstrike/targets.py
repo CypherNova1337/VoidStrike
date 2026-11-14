@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
-from .authorization import _load_yaml  # reuse the tiny YAML loader
+from .utils.yamlish import load_yaml
 from .engine.models import Target
 
 
@@ -39,7 +39,7 @@ def load_targets(path: str) -> list[Target]:
     """
     with open(path, "r", encoding="utf-8") as fh:
         raw = fh.read()
-    data = _load_yaml(raw) if path.endswith((".yaml", ".yml")) else json.loads(raw)
+    data = load_yaml(raw) if path.endswith((".yaml", ".yml")) else json.loads(raw)
     entries = data.get("targets", data) if isinstance(data, dict) else data
     if not isinstance(entries, list):
         raise ValueError("targets file must contain a list of targets")

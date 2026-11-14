@@ -2,8 +2,7 @@
 
 import asyncio
 
-from voidstrike.ai import AIEngine, Analyzer
-from voidstrike.authorization import Engagement, ScopeGuard
+from voidstrike.ai import AIEngine, Brain
 from voidstrike.config import Config
 from voidstrike.engine.models import Confidence, Finding, InjectionPoint, Severity, Target
 from voidstrike.engine.session import Session
@@ -12,12 +11,6 @@ from voidstrike.oob import OOBManager
 from voidstrike.shell.channel import ChannelError, RCEChannel
 
 from .mockserver import MockServer
-
-
-def _guard():
-    g = ScopeGuard(Engagement(name="c", in_scope=["127.0.0.1"]), resolve_dns=False)
-    g.grant_consent()
-    return g
 
 
 def test_channel_runs_commands():
@@ -36,8 +29,8 @@ def test_channel_runs_commands():
         config.ai.enabled = False
 
         async def _go():
-            async with HttpClient(config.http, _guard()) as http:
-                session = Session(config, http, Analyzer(AIEngine(config.ai)),
+            async with HttpClient(config.http) as http:
+                session = Session(config, http, Brain(AIEngine(config.ai)),
                                   OOBManager(config.oob))
                 channel = RCEChannel(session, point, finding)
                 assert await channel.check() is True
@@ -57,7 +50,7 @@ def test_channel_rejects_oob_finding():
         oracle="oob",
     )
     config = Config()
-    session = Session(config, None, Analyzer(AIEngine(config.ai)), OOBManager(config.oob))
+    session = Session(config, None, Brain(AIEngine(config.ai)), OOBManager(config.oob))
     try:
         RCEChannel(session, point, finding)
     except ChannelError:
