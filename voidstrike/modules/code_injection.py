@@ -7,6 +7,8 @@ oracle for blind cases.
 
 from __future__ import annotations
 
+import secrets
+
 from ..engine.models import Confidence, Severity, Target
 from .base import Module
 
@@ -20,6 +22,24 @@ class CodeInjection(Module):
         "Where dynamic behavior is required, use a safe interpreter or a strict "
         "allow-list, and never concatenate request data into code."
     )
+
+    def confirmation_probes(self) -> list[tuple[str, str]]:
+        """Language-arithmetic proofs: the product appears only if code ran."""
+        a = secrets.randbelow(9000) + 1000
+        b = secrets.randbelow(9000) + 1000
+        p = str(a * b)
+        return [
+            (f"print({a}*{b})", p),                     # python
+            (f"echo {a}*{b};", p),                      # php
+            (f"print({a}*{b});", p),                    # php / perl
+            (f"puts {a}*{b}", p),                       # ruby
+            (f"print {a}*{b};", p),                     # perl
+            (f"console.log({a}*{b})", p),               # node
+            (f"process.stdout.write(''+{a}*{b})", p),   # node
+            (f"';print({a}*{b});//", p),                # php string breakout
+            (f"'+str({a}*{b})+'", p),                   # python string breakout
+            (f"#{{{a}*{b}}}", p),                        # ruby interpolation
+        ]
 
     async def run(self, target: Target) -> None:
         for point in target.injection_points():

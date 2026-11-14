@@ -59,8 +59,17 @@ class Module:
             if result is None:
                 break  # payload budget exhausted
             if result.verdict.verdict == "executed" and result.verdict.confidence >= 0.7:
-                self._record(result, oracle=oracle)
-                return result
+                confirmed, why = await self.confirm_execution(point, result)
+                if confirmed:
+                    result.verdict.evidence = (
+                        (result.verdict.evidence or "") + f" | confirmed: {why}"
+                    ).strip(" |")
+                    self._record(result, oracle=oracle)
+                    return result
+                self.log.debug(
+                    f"[{self.name}] candidate at {point.describe()} rejected "
+                    f"(not confirmed: {why})"
+                )
             if result.verdict.verdict == "blocked":
                 blocked_example = result
 
@@ -80,9 +89,66 @@ class Module:
                 if result is None:
                     break
                 if result.verdict.verdict == "executed" and result.verdict.confidence >= 0.7:
-                    self._record(result, oracle=oracle, ai_assisted=True)
-                    return result
+                    confirmed, why = await self.confirm_execution(point, result)
+                    if confirmed:
+                        result.verdict.evidence = (
+                            (result.verdict.evidence or "") + f" | confirmed: {why}"
+                        ).strip(" |")
+                        self._record(result, oracle=oracle, ai_assisted=True)
+                        return result
         return None
+
+    # -- confirmation: reject reflection, demand a real transformation ---
+    def confirmation_probes(self) -> list[tuple[str, str]]:
+        """Return ``(payload, expected_output)`` pairs where ``expected_output``
+        is a value the server can only produce by EXECUTING the payload (e.g. an
+        arithmetic product that never appears in the payload text). Modules whose
+        execution can be proven this way override this; others fall back to the
+        reflection guard.
+        """
+        return []
+
+    async def confirm_execution(self, point: InjectionPoint,
+                                candidate: ProbeResult) -> tuple[bool, str]:
+        """Confirm a candidate output-oracle hit is real execution, not reflection.
+
+        1. Reject if the payload was echoed back verbatim (pure reflection).
+        2. Prove execution with a transformation probe: a computed value that is
+           absent from both the payload and the untouched page must appear in the
+           response. Reflection cannot produce it; only execution can.
+        """
+        body = candidate.response.text or ""
+        if candidate.payload and candidate.payload in body:
+            return False, "payload reflected verbatim"
+
+        probes = self.confirmation_probes()
+        if not probes:
+            # No transformation available for this class: fall back to a strict
+            # reflection guard — marker present, payload not echoed, and the
+            # marker is not simply part of the normal page.
+            baseline = await self.s.baseline_body(point)
+            if candidate.marker and candidate.marker in baseline:
+                return False, "marker already present in baseline response"
+            if candidate.marker and candidate.marker in body \
+                    and candidate.payload not in body:
+                return True, "marker present without payload reflection"
+            return False, "unconfirmed (reflection-guard)"
+
+        baseline = await self.s.baseline_body(point)
+        for payload, expected in probes:
+            result = await self.s.probe(
+                point=point, payload=payload, marker=expected,
+                vuln_class=self.vuln_class, module=self.name,
+            )
+            if result is None:
+                break
+            rbody = result.response.text or ""
+            if (expected in rbody and expected not in payload
+                    and expected not in baseline and payload not in rbody):
+                return True, f"computed {expected} returned (server executed the probe)"
+        return False, "no transformation confirmation (likely reflection)"
+
+
 
     async def plan(self, *, marker: str = "", host: str = "", sleep: int = 6,
                    context: str = "", oracle: str | None = None,

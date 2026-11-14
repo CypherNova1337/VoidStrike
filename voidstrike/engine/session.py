@@ -40,6 +40,7 @@ class Session:
         self.log = logger or get_logger(use_color=config.use_color)
         self.findings: list[Finding] = []
         self._baselines: dict[str, float] = {}
+        self._baseline_bodies: dict[str, str] = {}
         self._payload_counts: dict[str, int] = {}
 
     # -- baselines -------------------------------------------------------
@@ -52,9 +53,22 @@ class Session:
             r = await self._send(point, point.baseline_value or "1")
             if r.ok:
                 samples.append(r.elapsed)
+                self._baseline_bodies.setdefault(self._body_key(point), r.text or "")
         value = min(samples) if samples else 0.0
         self._baselines[key] = value
         return value
+
+    def _body_key(self, point: InjectionPoint) -> str:
+        return f"{point.target.url}|{point.describe()}"
+
+    async def baseline_body(self, point: InjectionPoint) -> str:
+        """The response body for a benign value, cached — used to rule out
+        numbers/tokens that appear in the page regardless of any injection."""
+        key = self._body_key(point)
+        if key not in self._baseline_bodies:
+            r = await self._send(point, point.baseline_value or "1")
+            self._baseline_bodies[key] = r.text or ""
+        return self._baseline_bodies[key]
 
     # -- probing ---------------------------------------------------------
     def _budget_ok(self, module: str, point: InjectionPoint) -> bool:
